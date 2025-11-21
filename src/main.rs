@@ -1,4 +1,25 @@
+use csv::Trim;
+use serde::Deserialize;
 use std::{collections::HashMap, env, error::Error, ffi::OsString, fs::File};
+
+#[derive(Deserialize, Debug, Clone)]
+struct InputRecord {
+    #[serde(rename = "type")]
+    typ: RecordType,
+    client: u16,
+    tx: u32,
+    amount: Option<f64>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+enum RecordType {
+    Deposit,
+    Withdrawal,
+    Dispute,
+    Resolve,
+    Chargeback,
+}
 
 // Client Account
 struct Account {
@@ -165,26 +186,26 @@ fn get_first_arg() -> Result<OsString, Box<dyn Error>> {
 
 fn process_transactions(file: File) -> HashMap<u16, Account> {
     // Create a CSV parser that reads from the file
-    let mut rdr = csv::Reader::from_reader(file);
+    let mut rdr = csv::ReaderBuilder::new().trim(Trim::All).from_reader(file);
 
     // Create ledger hashmap
     let mut ledger: HashMap<u16, Account> = HashMap::new();
 
     // Looping over the record
-    for result in rdr.records() {
+    for result in rdr.deserialize::<InputRecord>() {
         let record = result.expect("a CSV record");
 
-        let tx_type = &record[0];
-        let client_id: u16 = record[1].trim().parse().expect("Invalid client ID");
-        let tx_id: u32 = record[2].trim().parse().expect("Invalid Tx ID");
+        let tx_type = record.typ;
+        let client_id: u16 = record.client;
+        let tx_id: u32 = record.tx;
 
         match tx_type {
-            "deposit" => {
+            RecordType::Deposit => {
                 let account = ledger
                     .entry(client_id)
                     .or_insert_with(|| Account::new(client_id));
 
-                let tx_amount: f64 = record[3].trim().parse().expect("Invalid Tx Amount");
+                let tx_amount: f64 = record.amount.expect("Invalid Tx Amount");
                 let transaction = Transaction {
                     typ: TransactionType::Deposit,
                     id: tx_id,
@@ -194,12 +215,12 @@ fn process_transactions(file: File) -> HashMap<u16, Account> {
 
                 account.deposit(transaction);
             }
-            "withdrawal" => {
+            RecordType::Withdrawal => {
                 let account = ledger
                     .entry(client_id)
                     .or_insert_with(|| Account::new(client_id));
 
-                let tx_amount: f64 = record[3].trim().parse().expect("Invalid Tx Amount");
+                let tx_amount: f64 = record.amount.expect("Invalid Tx Amount");
                 let transaction = Transaction {
                     typ: TransactionType::Withdrawal,
                     id: tx_id,
@@ -209,28 +230,27 @@ fn process_transactions(file: File) -> HashMap<u16, Account> {
 
                 account.withdraw(transaction);
             }
-            "dispute" => {
+            RecordType::Dispute => {
                 let account = ledger
                     .entry(client_id)
                     .or_insert_with(|| Account::new(client_id));
 
                 account.dispute(tx_id);
             }
-            "resolve" => {
+            RecordType::Resolve => {
                 let account = ledger
                     .entry(client_id)
                     .or_insert_with(|| Account::new(client_id));
 
                 account.resolve(tx_id);
             }
-            "chargeback" => {
+            RecordType::Chargeback => {
                 let account = ledger
                     .entry(client_id)
                     .or_insert_with(|| Account::new(client_id));
 
                 account.chargeback(tx_id);
             }
-            _ => (),
         }
     }
     ledger
