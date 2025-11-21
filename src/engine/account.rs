@@ -57,6 +57,7 @@ impl Account {
                 TransactionType::Withdrawal => {
                     return; // Withdrawal can't be disputed
                 }
+                _ => return,
             }
 
             tx.is_disputed = true;
@@ -81,6 +82,7 @@ impl Account {
                 TransactionType::Withdrawal => {
                     return; // Withdrawal can't be disputed
                 }
+                _ => return,
             }
 
             tx.is_disputed = false;
@@ -104,6 +106,7 @@ impl Account {
                 TransactionType::Withdrawal => {
                     return; // Withdrawal can't be disputed
                 }
+                _ => return,
             }
 
             self.is_locked = true;

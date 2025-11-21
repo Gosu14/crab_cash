@@ -1,8 +1,8 @@
-mod ledger;
+mod engine;
 
 use csv::Trim;
-use ledger::{Account, InputRecord, RecordType, Transaction, TransactionType};
-use std::{collections::HashMap, env, error::Error, ffi::OsString, fs::File};
+use engine::{Account, InputRecord, Ledger, RecordType, Transaction, TransactionType};
+use std::{env, error::Error, ffi::OsString, fs::File};
 
 fn main() {
     // Get filename as 1st argument
@@ -21,7 +21,7 @@ fn main() {
     wtr.write_record(["client", "available", "held", "total", "locked"])
         .expect("Error writing headers");
 
-    for acc in ledger.values() {
+    for acc in ledger.accounts() {
         wtr.write_record([
             acc.id.to_string(),
             acc.amount_available.to_string(),
@@ -44,72 +44,78 @@ fn get_first_arg() -> Result<OsString, Box<dyn Error>> {
     }
 }
 
-fn process_transactions(file: File) -> HashMap<u16, Account> {
+fn process_transactions(file: File) -> Ledger {
     // Create a CSV parser that reads from the file
     let mut rdr = csv::ReaderBuilder::new().trim(Trim::All).from_reader(file);
 
     // Create ledger hashmap
-    let mut ledger: HashMap<u16, Account> = HashMap::new();
+    let mut ledger = Ledger::new();
 
     // Looping over the record
     for result in rdr.deserialize::<InputRecord>() {
         let record = result.expect("a CSV record");
 
-        let tx_type = record.typ;
+        let tx_type: RecordType = record.typ;
         let client_id: u16 = record.client;
         let tx_id: u32 = record.tx;
 
         match tx_type {
             RecordType::Deposit => {
-                let account = ledger
-                    .entry(client_id)
-                    .or_insert_with(|| Account::new(client_id));
-
                 let tx_amount: f64 = record.amount.expect("Invalid Tx Amount");
                 let transaction = Transaction {
+                    account_id: client_id,
                     typ: TransactionType::Deposit,
                     id: tx_id,
                     amount: tx_amount,
                     is_disputed: false,
                 };
 
-                account.deposit(transaction);
+                ledger.process_transaction(transaction);
             }
             RecordType::Withdrawal => {
-                let account = ledger
-                    .entry(client_id)
-                    .or_insert_with(|| Account::new(client_id));
-
                 let tx_amount: f64 = record.amount.expect("Invalid Tx Amount");
                 let transaction = Transaction {
+                    account_id: client_id,
                     typ: TransactionType::Withdrawal,
                     id: tx_id,
                     amount: tx_amount,
                     is_disputed: false,
                 };
 
-                account.withdraw(transaction);
+                ledger.process_transaction(transaction);
             }
             RecordType::Dispute => {
-                let account = ledger
-                    .entry(client_id)
-                    .or_insert_with(|| Account::new(client_id));
+                let transaction = Transaction {
+                    account_id: client_id,
+                    typ: TransactionType::Dispute,
+                    id: tx_id,
+                    amount: 0.0,
+                    is_disputed: false,
+                };
 
-                account.dispute(tx_id);
+                ledger.process_transaction(transaction);
             }
             RecordType::Resolve => {
-                let account = ledger
-                    .entry(client_id)
-                    .or_insert_with(|| Account::new(client_id));
+                let transaction = Transaction {
+                    account_id: client_id,
+                    typ: TransactionType::Resolve,
+                    id: tx_id,
+                    amount: 0.0,
+                    is_disputed: false,
+                };
 
-                account.resolve(tx_id);
+                ledger.process_transaction(transaction);
             }
             RecordType::Chargeback => {
-                let account = ledger
-                    .entry(client_id)
-                    .or_insert_with(|| Account::new(client_id));
+                let transaction = Transaction {
+                    account_id: client_id,
+                    typ: TransactionType::Chargeback,
+                    id: tx_id,
+                    amount: 0.0,
+                    is_disputed: false,
+                };
 
-                account.chargeback(tx_id);
+                ledger.process_transaction(transaction);
             }
         }
     }
@@ -128,13 +134,13 @@ mod tests {
         let ledger = process_transactions(file);
 
         // Verify client 1: deposit 1.0 + deposit 2.0 - withdrawal 1.5 = 1.5
-        let account1 = ledger.get(&1).expect("Client 1 should exist");
+        let account1 = ledger.get_account(1);
         assert_eq!(account1.amount_available, 1.5);
         assert_eq!(account1.amount_held, 0.0);
         assert!(!account1.is_locked);
 
         // Verify client 2: deposit 2.0 - withdrawal 3.0 (should fail) = 2.0
-        let account2 = ledger.get(&2).expect("Client 2 should exist");
+        let account2 = ledger.get_account(2);
         assert_eq!(account2.amount_available, 2.0);
         assert_eq!(account2.amount_held, 0.0);
         assert!(!account2.is_locked);
@@ -142,30 +148,30 @@ mod tests {
 
     #[test]
     fn test_max_withdrawal() {
-        let mut ledger: HashMap<u16, Account> = HashMap::new();
-
-        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+        let mut ledger = Ledger::new();
 
         let deposit = Transaction {
-            typ: TransactionType::Deposit,
+            account_id: 0,
             id: 0,
             amount: 100.0,
+            typ: TransactionType::Deposit,
             is_disputed: false,
         };
 
-        account.deposit(deposit);
+        ledger.process_transaction(deposit);
 
         let withdrawal = Transaction {
-            typ: TransactionType::Withdrawal,
+            account_id: 0,
             id: 1,
             amount: 100.0,
+            typ: TransactionType::Withdrawal,
             is_disputed: false,
         };
 
-        account.withdraw(withdrawal);
+        ledger.process_transaction(withdrawal);
 
         // Verify client 1: deposit 100.0 + withdrawal 100.0 = 0.0
-        let account1 = ledger.get(&0).expect("Client 1 should exist");
+        let account1 = ledger.get_account(0);
         assert_eq!(account1.amount_available, 0.0);
         assert_eq!(account1.amount_held, 0.0);
         assert!(!account1.is_locked);
@@ -173,44 +179,62 @@ mod tests {
 
     #[test]
     fn test_that_account_is_locked_after_chargeback() {
-        let mut ledger: HashMap<u16, Account> = HashMap::new();
-
-        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+        let mut ledger = Ledger::new();
 
         let deposit = Transaction {
-            typ: TransactionType::Deposit,
+            account_id: 0,
             id: 0,
             amount: 100.0,
+            typ: TransactionType::Deposit,
             is_disputed: false,
         };
 
-        account.deposit(deposit);
+        ledger.process_transaction(deposit);
 
         // First dispute the deposit
-        account.dispute(0);
+        let dispute = Transaction {
+            account_id: 0,
+            id: 0,
+            amount: 0.0,
+            typ: TransactionType::Dispute,
+            is_disputed: false,
+        };
+        ledger.process_transaction(dispute);
 
         // Verify that the deposit is under dispute
-        let deposit = account.tx.get(&0).unwrap();
-        assert!(deposit.is_disputed);
+        {
+            let account = ledger.get_account(0);
+            let disputed_tx = account.tx.get(&0).unwrap();
+            assert!(disputed_tx.is_disputed);
+        }
 
         // Then chargeback
-        account.chargeback(0);
+        let chargeback = Transaction {
+            account_id: 0,
+            id: 0,
+            amount: 0.0,
+            typ: TransactionType::Chargeback,
+            is_disputed: false,
+        };
+        ledger.process_transaction(chargeback);
 
         // Verify that now the account is locked
+        let account = ledger.get_account(0);
         assert!(account.is_locked);
 
         // Try adding another deposit
         let deposit = Transaction {
-            typ: TransactionType::Deposit,
+            account_id: 0,
             id: 1,
             amount: 200.0,
+            typ: TransactionType::Deposit,
             is_disputed: false,
         };
 
-        account.deposit(deposit);
+        ledger.process_transaction(deposit);
 
         // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
-        let account1 = ledger.get(&0).expect("Client 1 should exist");
+        let account1 = ledger.get_account(0);
         assert_eq!(account1.amount_available, 0.0);
         assert_eq!(account1.amount_held, 0.0);
         assert!(account1.is_locked);
@@ -218,90 +242,120 @@ mod tests {
 
     #[test]
     fn test_that_dispute_can_be_resolved() {
-        let mut ledger: HashMap<u16, Account> = HashMap::new();
-
-        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+        let mut ledger = Ledger::new();
 
         let deposit = Transaction {
-            typ: TransactionType::Deposit,
+            account_id: 0,
             id: 0,
             amount: 100.0,
+            typ: TransactionType::Deposit,
             is_disputed: false,
         };
 
-        account.deposit(deposit);
+        ledger.process_transaction(deposit);
 
         // First dispute the deposit
-        account.dispute(0);
+        let dispute = Transaction {
+            account_id: 0,
+            id: 0,
+            amount: 0.0,
+            typ: TransactionType::Dispute,
+            is_disputed: false,
+        };
+
+        ledger.process_transaction(dispute);
 
         // Verify that the deposit is under dispute
-        let deposit = account.tx.get(&0).unwrap();
-        assert!(deposit.is_disputed);
-        assert_eq!(account.amount_held, 100.0);
-        assert_eq!(account.amount_available, 0.0);
+        {
+            let account = ledger.get_account(0);
+            let deposit = account.tx.get(&0).unwrap();
+            assert!(deposit.is_disputed);
+            assert_eq!(account.amount_held, 100.0);
+            assert_eq!(account.amount_available, 0.0);
+        }
 
         // Then resolve
-        account.resolve(0);
+        let resolve = Transaction {
+            account_id: 0,
+            id: 0,
+            amount: 0.0,
+            typ: TransactionType::Resolve,
+            is_disputed: false,
+        };
+
+        ledger.process_transaction(resolve);
 
         // Verify that now the account is locked
-        assert!(!account.is_locked);
-        assert_eq!(account.amount_held, 0.0);
-        assert_eq!(account.amount_available, 100.0);
+        {
+            let account = ledger.get_account(0);
+            assert!(!account.is_locked);
+            assert_eq!(account.amount_held, 0.0);
+            assert_eq!(account.amount_available, 100.0);
+        }
 
         // Try adding another deposit
         let deposit = Transaction {
-            typ: TransactionType::Deposit,
+            account_id: 0,
             id: 1,
             amount: 200.0,
+            typ: TransactionType::Deposit,
             is_disputed: false,
         };
 
-        account.deposit(deposit);
+        ledger.process_transaction(deposit);
 
         // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
-        let account1 = ledger.get(&0).expect("Client 1 should exist");
-        assert_eq!(account1.amount_available, 300.0);
-        assert_eq!(account1.amount_held, 0.0);
-        assert!(!account1.is_locked);
+        let account = ledger.get_account(0);
+        assert_eq!(account.amount_available, 300.0);
+        assert_eq!(account.amount_held, 0.0);
+        assert!(!account.is_locked);
     }
 
     #[test]
     fn test_that_dispute_on_withdrawhal_are_ignored() {
-        let mut ledger: HashMap<u16, Account> = HashMap::new();
-
-        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+        let mut ledger = Ledger::new();
 
         let deposit = Transaction {
-            typ: TransactionType::Deposit,
+            account_id: 0,
             id: 0,
             amount: 100.0,
+            typ: TransactionType::Deposit,
             is_disputed: false,
         };
 
-        account.deposit(deposit);
+        ledger.process_transaction(deposit);
 
         let withdrawal = Transaction {
-            typ: TransactionType::Withdrawal,
+            account_id: 0,
             id: 1,
             amount: 50.0,
+            typ: TransactionType::Withdrawal,
             is_disputed: false,
         };
 
-        account.withdraw(withdrawal);
+        ledger.process_transaction(withdrawal);
 
         // First dispute the withdrawal
-        account.dispute(1);
+        let dispute = Transaction {
+            account_id: 0,
+            id: 1,
+            amount: 0.0,
+            typ: TransactionType::Dispute,
+            is_disputed: false,
+        };
+
+        ledger.process_transaction(dispute);
 
         // Verify that the deposit is under dispute
+        let account = ledger.get_account(0);
         let withdrawal = account.tx.get(&1).unwrap();
         assert!(!withdrawal.is_disputed);
         assert_eq!(account.amount_held, 0.0);
         assert_eq!(account.amount_available, 50.0);
 
         // Verify client 1: deposit 100.0 + withdrawal 50.0 + try dispute the withdrawal = 50.0
-        let account1 = ledger.get(&0).expect("Client 1 should exist");
-        assert_eq!(account1.amount_available, 50.0);
-        assert_eq!(account1.amount_held, 0.0);
-        assert!(!account1.is_locked);
+        assert_eq!(account.amount_available, 50.0);
+        assert_eq!(account.amount_held, 0.0);
+        assert!(!account.is_locked);
     }
 }
