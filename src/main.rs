@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::{collections::HashMap, env, error::Error, ffi::OsString, fs::File};
 
 // Client Account
@@ -7,7 +6,7 @@ struct Account {
     amount_available: f64,
     amount_held: f64,
     is_locked: bool,
-    tx: HashMap<u32, RefCell<Transaction>>,
+    tx: HashMap<u32, Transaction>,
 }
 
 impl Account {
@@ -22,21 +21,28 @@ impl Account {
     }
 
     fn deposit(&mut self, transaction: Transaction) {
+        if self.is_locked {
+            return;
+        }
         self.amount_available += transaction.amount;
-        self.tx.insert(transaction.id, RefCell::new(transaction));
+        self.tx.insert(transaction.id, transaction);
     }
 
     fn withdraw(&mut self, transaction: Transaction) {
-        if self.amount_available > transaction.amount {
+        if self.is_locked {
+            return;
+        }
+        if self.amount_available >= transaction.amount {
             self.amount_available -= transaction.amount;
-            self.tx.insert(transaction.id, RefCell::new(transaction));
+            self.tx.insert(transaction.id, transaction);
         }
     }
 
     fn dispute(&mut self, tx_id: u32) {
-        if let Some(tx_cell) = self.tx.get(&tx_id) {
-            let mut tx = tx_cell.borrow_mut();
-
+        if self.is_locked {
+            return;
+        }
+        if let Some(tx) = self.tx.get_mut(&tx_id) {
             if tx.is_disputed {
                 return; // Already disputed -> ignored
             }
@@ -57,9 +63,10 @@ impl Account {
     }
 
     fn resolve(&mut self, tx_id: u32) {
-        if let Some(tx_cell) = self.tx.get(&tx_id) {
-            let mut tx = tx_cell.borrow_mut();
-
+        if self.is_locked {
+            return;
+        }
+        if let Some(tx) = self.tx.get_mut(&tx_id) {
             if !tx.is_disputed {
                 return;
             }
@@ -80,9 +87,10 @@ impl Account {
     }
 
     fn chargeback(&mut self, tx_id: u32) {
-        if let Some(tx_cell) = self.tx.get(&tx_id) {
-            let mut tx = tx_cell.borrow_mut();
-
+        if self.is_locked {
+            return;
+        }
+        if let Some(tx) = self.tx.get_mut(&tx_id) {
             if !tx.is_disputed {
                 return; // Not under dispute
             }
@@ -250,5 +258,170 @@ mod tests {
         assert_eq!(account2.amount_available, 2.0);
         assert_eq!(account2.amount_held, 0.0);
         assert!(!account2.is_locked);
+    }
+
+    #[test]
+    fn test_max_withdrawal() {
+        let mut ledger: HashMap<u16, Account> = HashMap::new();
+
+        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+
+        let deposit = Transaction {
+            typ: TransactionType::Deposit,
+            id: 0,
+            amount: 100.0,
+            is_disputed: false,
+        };
+
+        account.deposit(deposit);
+
+        let withdrawal = Transaction {
+            typ: TransactionType::Withdrawal,
+            id: 1,
+            amount: 100.0,
+            is_disputed: false,
+        };
+
+        account.withdraw(withdrawal);
+
+        // Verify client 1: deposit 100.0 + withdrawal 100.0 = 0.0
+        let account1 = ledger.get(&0).expect("Client 1 should exist");
+        assert_eq!(account1.amount_available, 0.0);
+        assert_eq!(account1.amount_held, 0.0);
+        assert!(!account1.is_locked);
+    }
+
+    #[test]
+    fn test_that_account_is_locked_after_chargeback() {
+        let mut ledger: HashMap<u16, Account> = HashMap::new();
+
+        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+
+        let deposit = Transaction {
+            typ: TransactionType::Deposit,
+            id: 0,
+            amount: 100.0,
+            is_disputed: false,
+        };
+
+        account.deposit(deposit);
+
+        // First dispute the deposit
+        account.dispute(0);
+
+        // Verify that the deposit is under dispute
+        let deposit = account.tx.get(&0).unwrap();
+        assert!(deposit.is_disputed);
+
+        // Then chargeback
+        account.chargeback(0);
+
+        // Verify that now the account is locked
+        assert!(account.is_locked);
+
+        // Try adding another deposit
+        let deposit = Transaction {
+            typ: TransactionType::Deposit,
+            id: 1,
+            amount: 200.0,
+            is_disputed: false,
+        };
+
+        account.deposit(deposit);
+
+        // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
+        let account1 = ledger.get(&0).expect("Client 1 should exist");
+        assert_eq!(account1.amount_available, 0.0);
+        assert_eq!(account1.amount_held, 0.0);
+        assert!(account1.is_locked);
+    }
+
+    #[test]
+    fn test_that_dispute_can_be_resolved() {
+        let mut ledger: HashMap<u16, Account> = HashMap::new();
+
+        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+
+        let deposit = Transaction {
+            typ: TransactionType::Deposit,
+            id: 0,
+            amount: 100.0,
+            is_disputed: false,
+        };
+
+        account.deposit(deposit);
+
+        // First dispute the deposit
+        account.dispute(0);
+
+        // Verify that the deposit is under dispute
+        let deposit = account.tx.get(&0).unwrap();
+        assert!(deposit.is_disputed);
+        assert_eq!(account.amount_held, 100.0);
+        assert_eq!(account.amount_available, 0.0);
+
+        // Then resolve
+        account.resolve(0);
+
+        // Verify that now the account is locked
+        assert!(!account.is_locked);
+        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, 100.0);
+
+        // Try adding another deposit
+        let deposit = Transaction {
+            typ: TransactionType::Deposit,
+            id: 1,
+            amount: 200.0,
+            is_disputed: false,
+        };
+
+        account.deposit(deposit);
+
+        // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
+        let account1 = ledger.get(&0).expect("Client 1 should exist");
+        assert_eq!(account1.amount_available, 300.0);
+        assert_eq!(account1.amount_held, 0.0);
+        assert!(!account1.is_locked);
+    }
+
+    #[test]
+    fn test_that_dispute_on_withdrawhal_are_ignored() {
+        let mut ledger: HashMap<u16, Account> = HashMap::new();
+
+        let account: &mut Account = ledger.entry(0).or_insert_with(|| Account::new(0));
+
+        let deposit = Transaction {
+            typ: TransactionType::Deposit,
+            id: 0,
+            amount: 100.0,
+            is_disputed: false,
+        };
+
+        account.deposit(deposit);
+
+        let withdrawal = Transaction {
+            typ: TransactionType::Withdrawal,
+            id: 1,
+            amount: 50.0,
+            is_disputed: false,
+        };
+
+        account.withdraw(withdrawal);
+
+        // First dispute the withdrawal
+        account.dispute(1);
+
+        // Verify that the deposit is under dispute
+        let withdrawal = account.tx.get(&1).unwrap();
+        assert!(!withdrawal.is_disputed);
+        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, 50.0);
+
+        // Verify client 1: deposit 100.0 + withdrawal 50.0 + try dispute the withdrawal = 50.0
+        let account1 = ledger.get(&0).expect("Client 1 should exist");
+        assert_eq!(account1.amount_available, 50.0);
+        assert_eq!(account1.amount_held, 0.0);
+        assert!(!account1.is_locked);
     }
 }
