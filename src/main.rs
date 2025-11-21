@@ -1,7 +1,7 @@
 mod engine;
 
 use csv::Trim;
-use engine::{Account, InputRecord, Ledger, RecordType, Transaction, TransactionType};
+use engine::{Account, InputRecord, Ledger, Transaction, TransactionType};
 use std::{env, error::Error, ffi::OsString, fs::File};
 
 fn main() {
@@ -54,70 +54,8 @@ fn process_transactions(file: File) -> Ledger {
     // Looping over the record
     for result in rdr.deserialize::<InputRecord>() {
         let record = result.expect("a CSV record");
-
-        let tx_type: RecordType = record.typ;
-        let client_id: u16 = record.client;
-        let tx_id: u32 = record.tx;
-
-        match tx_type {
-            RecordType::Deposit => {
-                let tx_amount: f64 = record.amount.expect("Invalid Tx Amount");
-                let transaction = Transaction {
-                    account_id: client_id,
-                    typ: TransactionType::Deposit,
-                    id: tx_id,
-                    amount: tx_amount,
-                    is_disputed: false,
-                };
-
-                ledger.process_transaction(transaction);
-            }
-            RecordType::Withdrawal => {
-                let tx_amount: f64 = record.amount.expect("Invalid Tx Amount");
-                let transaction = Transaction {
-                    account_id: client_id,
-                    typ: TransactionType::Withdrawal,
-                    id: tx_id,
-                    amount: tx_amount,
-                    is_disputed: false,
-                };
-
-                ledger.process_transaction(transaction);
-            }
-            RecordType::Dispute => {
-                let transaction = Transaction {
-                    account_id: client_id,
-                    typ: TransactionType::Dispute,
-                    id: tx_id,
-                    amount: 0.0,
-                    is_disputed: false,
-                };
-
-                ledger.process_transaction(transaction);
-            }
-            RecordType::Resolve => {
-                let transaction = Transaction {
-                    account_id: client_id,
-                    typ: TransactionType::Resolve,
-                    id: tx_id,
-                    amount: 0.0,
-                    is_disputed: false,
-                };
-
-                ledger.process_transaction(transaction);
-            }
-            RecordType::Chargeback => {
-                let transaction = Transaction {
-                    account_id: client_id,
-                    typ: TransactionType::Chargeback,
-                    id: tx_id,
-                    amount: 0.0,
-                    is_disputed: false,
-                };
-
-                ledger.process_transaction(transaction);
-            }
-        }
+        let transaction = record.to_transaction();
+        ledger.process_transaction(transaction);
     }
     ledger
 }

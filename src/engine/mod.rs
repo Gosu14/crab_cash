@@ -5,5 +5,5 @@ mod transaction;
 
 pub use account::Account;
 pub use ledger::Ledger;
-pub use record::{InputRecord, RecordType};
+pub use record::InputRecord;
 pub use transaction::{Transaction, TransactionType};
