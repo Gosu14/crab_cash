@@ -20,8 +20,8 @@ impl Ledger {
             .or_insert_with(|| Account::new(tx.account_id));
 
         match tx.typ {
-            TransactionType::Deposit => account.deposit(tx),
-            TransactionType::Withdrawal => account.withdraw(tx),
+            TransactionType::Deposit => account.deposit(tx.id, tx.amount),
+            TransactionType::Withdrawal => account.withdraw(tx.id, tx.amount),
             TransactionType::Dispute => account.dispute(tx.id),
             TransactionType::Resolve => account.resolve(tx.id),
             TransactionType::Chargeback => account.chargeback(tx.id),
