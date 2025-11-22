@@ -55,7 +55,7 @@ fn process_transactions(file: File) -> Ledger {
     for result in rdr.deserialize::<InputRecord>() {
         let record = result.expect("a CSV record");
         let transaction = record.to_transaction();
-        ledger.process_transaction(transaction);
+        let _ = ledger.process_transaction(transaction);
     }
     ledger
 }

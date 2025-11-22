@@ -1,6 +1,15 @@
 use crate::Account;
+use crate::engine::account::AccountOperationError;
 use crate::{Transaction, TransactionType};
+use anyhow::{Ok, Result};
 use std::collections::HashMap;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum LedgerError {
+    #[error("Account operation failed: {0}")]
+    Account(#[from] AccountOperationError),
+}
 
 pub struct Ledger {
     accounts: HashMap<u16, Account>,
@@ -13,29 +22,21 @@ impl Ledger {
         }
     }
 
-    pub fn process_transaction(&mut self, tx: Transaction) {
+    pub fn process_transaction(&mut self, tx: Transaction) -> Result<()> {
         let account = self
             .accounts
             .entry(tx.account_id)
             .or_insert_with(|| Account::new(tx.account_id));
 
         match tx.typ {
-            TransactionType::Deposit => {
-                if let Err(_e) = account.deposit(tx.id, tx.amount) { /* To be logged */ }
-            }
-            TransactionType::Withdrawal => {
-                if let Err(_e) = account.withdraw(tx.id, tx.amount) { /* To be logged */ }
-            }
-            TransactionType::Dispute => {
-                if let Err(_e) = account.dispute(tx.id) { /* To be logged */ }
-            }
-            TransactionType::Resolve => {
-                if let Err(_e) = account.resolve(tx.id) { /* To be logged */ }
-            }
-            TransactionType::Chargeback => {
-                if let Err(_e) = account.chargeback(tx.id) { /* To be logged */ }
-            }
+            TransactionType::Deposit => account.deposit(tx.id, tx.amount)?,
+            TransactionType::Withdrawal => account.withdraw(tx.id, tx.amount)?,
+            TransactionType::Dispute => account.dispute(tx.id)?,
+            TransactionType::Resolve => account.resolve(tx.id)?,
+            TransactionType::Chargeback => account.chargeback(tx.id)?,
         }
+
+        Ok(())
     }
 
     pub fn accounts(&self) -> impl Iterator<Item = &Account> {
