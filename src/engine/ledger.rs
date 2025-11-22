@@ -20,11 +20,21 @@ impl Ledger {
             .or_insert_with(|| Account::new(tx.account_id));
 
         match tx.typ {
-            TransactionType::Deposit => account.deposit(tx.id, tx.amount),
-            TransactionType::Withdrawal => account.withdraw(tx.id, tx.amount),
-            TransactionType::Dispute => account.dispute(tx.id),
-            TransactionType::Resolve => account.resolve(tx.id),
-            TransactionType::Chargeback => account.chargeback(tx.id),
+            TransactionType::Deposit => {
+                if let Err(_e) = account.deposit(tx.id, tx.amount) { /* To be logged */ }
+            }
+            TransactionType::Withdrawal => {
+                if let Err(_e) = account.withdraw(tx.id, tx.amount) { /* To be logged */ }
+            }
+            TransactionType::Dispute => {
+                if let Err(_e) = account.dispute(tx.id) { /* To be logged */ }
+            }
+            TransactionType::Resolve => {
+                if let Err(_e) = account.resolve(tx.id) { /* To be logged */ }
+            }
+            TransactionType::Chargeback => {
+                if let Err(_e) = account.chargeback(tx.id) { /* To be logged */ }
+            }
         }
     }
 
