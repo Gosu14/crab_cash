@@ -29,35 +29,30 @@ impl InputRecord {
                 id: self.tx,
                 amount: self.amount.clone(),
                 typ: TransactionType::Deposit,
-                is_disputed: false,
             },
             RecordType::Withdrawal => Transaction {
                 account_id: self.client,
                 id: self.tx,
                 amount: self.amount.clone(),
                 typ: TransactionType::Withdrawal,
-                is_disputed: false,
             },
             RecordType::Dispute => Transaction {
                 account_id: self.client,
                 id: self.tx,
                 amount: None,
                 typ: TransactionType::Dispute,
-                is_disputed: false,
             },
             RecordType::Resolve => Transaction {
                 account_id: self.client,
                 id: self.tx,
                 amount: None,
                 typ: TransactionType::Resolve,
-                is_disputed: false,
             },
             RecordType::Chargeback => Transaction {
                 account_id: self.client,
                 id: self.tx,
                 amount: None,
                 typ: TransactionType::Chargeback,
-                is_disputed: false,
             },
         }
     }
