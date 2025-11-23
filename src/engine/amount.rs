@@ -126,9 +126,7 @@ impl fmt::Display for Amount {
 }
 
 mod tests {
-    use std::str::FromStr;
-
-    use crate::engine::amount::{self, Amount, AmountError};
+    use super::*;
 
     #[test]
     fn test_that_valid_string_can_be_parsed() {
@@ -152,6 +150,10 @@ mod tests {
         assert!(amount.is_ok());
         assert_eq!(amount.unwrap().store, 50000);
 
+        let amount = Amount::from_str("  5   ");
+        assert!(amount.is_ok());
+        assert_eq!(amount.unwrap().store, 50000);
+
         let amount = Amount::from_str("5.1");
         assert!(amount.is_ok());
         assert_eq!(amount.unwrap().store, 51000);
@@ -171,6 +173,10 @@ mod tests {
         let amount = Amount::from_str("-.05");
         assert!(amount.is_ok());
         assert_eq!(amount.unwrap().store, -500);
+
+        let amount = Amount::from_str("-5");
+        assert!(amount.is_ok());
+        assert_eq!(amount.unwrap().store, -50000);
 
         let amount = Amount::from_str("05.05");
         assert!(amount.is_ok());
