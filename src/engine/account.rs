@@ -15,7 +15,7 @@ struct AccountTx {
     is_disputed: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Account {
     pub id: u16, // Unique
     pub amount_available: Amount,
@@ -201,7 +201,7 @@ impl Account {
 }
 
 mod tests {
-    use crate::engine::{Account, Amount, account::AccountOperationError};
+    use super::*;
     use std::str::FromStr;
 
     #[test]
@@ -327,5 +327,238 @@ mod tests {
         assert_eq!(account.amount_available, Amount::from_str("50.0").unwrap());
         assert_eq!(account.amount_held, Amount::new());
         assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_deposit_with_same_tx_id_is_rejected() {
+        let mut account = Account::new(0);
+
+        // First deposit
+        let res = account.deposit(0, Amount::from_str("100.0").unwrap());
+        assert!(res.is_ok());
+
+        // Second deposit with same tx id
+        let err = account.deposit(0, Amount::from_str("50.0").unwrap());
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxAlreadyExist(0)));
+
+        // Verify that only first deposit is applied
+        assert_eq!(account.amount_available, Amount::from_str("100.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_withdraw_with_same_tx_id_is_rejected() {
+        let mut account = Account::new(0);
+
+        // Deposit then withdraw
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+        let res = account.withdraw(1, Amount::from_str("50.0").unwrap());
+        assert!(res.is_ok());
+
+        // Second withdraw with same tx id
+        let err = account.withdraw(1, Amount::from_str("10.0").unwrap());
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxAlreadyExist(1)));
+
+        // Verify that only first withdraw is applied
+        assert_eq!(account.amount_available, Amount::from_str("50.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_dispute_on_unknown_tx_is_rejected() {
+        let mut account = Account::new(0);
+
+        // No tx with id 42
+        let err = account.dispute(42);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxUnknown(42)));
+
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_dispute_cannot_be_raised_twice() {
+        let mut account = Account::new(0);
+
+        // Make a deposit and dispute it
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+        let _ = account.dispute(0);
+
+        let disputed_tx = account.tx.get(&0).unwrap();
+        assert!(disputed_tx.is_disputed);
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::from_str("100.0").unwrap());
+
+        // Disputing again should fail
+        let err = account.dispute(0);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxAlreadyDisputed(0)));
+
+        // State unchanged
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::from_str("100.0").unwrap());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_resolve_on_unknown_tx_is_rejected() {
+        let mut account = Account::new(0);
+
+        // No tx with id 42
+        let err = account.resolve(42);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxUnknown(42)));
+
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_resolve_on_not_disputed_tx_is_rejected() {
+        let mut account = Account::new(0);
+
+        // Deposit but do not dispute
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+
+        let err = account.resolve(0);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxNotDisputed(0)));
+
+        // State unchanged
+        assert_eq!(account.amount_available, Amount::from_str("100.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_resolve_on_withdrawal_is_rejected() {
+        let mut account = Account::new(0);
+
+        // Deposit then withdraw
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+        let _ = account.withdraw(1, Amount::from_str("50.0").unwrap());
+        let _ = account.dispute(1);
+
+        let err = account.resolve(1);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxNotDisputed(1)));
+
+        // State unchanged
+        assert_eq!(account.amount_available, Amount::from_str("50.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_chargeback_on_unknown_tx_is_rejected() {
+        let mut account = Account::new(0);
+
+        let err = account.chargeback(42);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxUnknown(42)));
+
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_chargeback_on_not_disputed_tx_is_rejected() {
+        let mut account = Account::new(0);
+
+        // Deposit but do not dispute
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+
+        let err = account.chargeback(0);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxNotDisputed(0)));
+
+        // State unchanged and account not locked
+        assert_eq!(account.amount_available, Amount::from_str("100.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_chargeback_on_withdrawal_is_rejected() {
+        let mut account = Account::new(0);
+
+        // Deposit then withdraw
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+        let _ = account.withdraw(1, Amount::from_str("50.0").unwrap());
+        let _ = account.dispute(1);
+
+        let err = account.chargeback(1);
+        assert!(err.is_err());
+        let err = err.unwrap_err();
+        assert!(matches!(err, AccountOperationError::TxNotDisputed(1)));
+
+        // State unchanged and account not locked
+        assert_eq!(account.amount_available, Amount::from_str("50.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(!account.is_locked);
+    }
+
+    #[test]
+    fn test_that_operations_on_locked_account_are_rejected() {
+        let mut account = Account::new(0);
+
+        // Setup: deposit, dispute, then chargeback to lock account
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
+        let _ = account.dispute(0);
+        let _ = account.chargeback(0);
+        assert!(account.is_locked);
+
+        // All further operations should be rejected with AccountLocked
+        let err = account.deposit(1, Amount::from_str("10.0").unwrap());
+        assert!(matches!(
+            err.unwrap_err(),
+            AccountOperationError::AccountLocked(1)
+        ));
+
+        let err = account.withdraw(2, Amount::from_str("10.0").unwrap());
+        assert!(matches!(
+            err.unwrap_err(),
+            AccountOperationError::AccountLocked(2)
+        ));
+
+        let err = account.dispute(0);
+        assert!(matches!(
+            err.unwrap_err(),
+            AccountOperationError::AccountLocked(0)
+        ));
+
+        let err = account.resolve(0);
+        assert!(matches!(
+            err.unwrap_err(),
+            AccountOperationError::AccountLocked(0)
+        ));
+
+        let err = account.chargeback(0);
+        assert!(matches!(
+            err.unwrap_err(),
+            AccountOperationError::AccountLocked(0)
+        ));
+
+        // Balances remain what they were after the first chargeback
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
+        assert!(account.is_locked);
     }
 }
