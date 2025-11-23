@@ -1,5 +1,7 @@
+#[cfg(test)]
+#[allow(unused_imports)]
 use crab_cash::engine::AccountSnapshot;
-use csv::{ReaderBuilder, Trim};
+use csv::Trim;
 use std::{fs, fs::File, path::PathBuf, process::Command};
 
 #[test]

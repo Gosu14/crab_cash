@@ -113,6 +113,7 @@ impl Ledger {
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
     use super::*;
     use crate::engine::{Transaction, TransactionType};

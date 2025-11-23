@@ -1,23 +1,20 @@
 mod engine;
 
 use csv::Trim;
-use engine::{Amount, InputRecord, Ledger};
+use engine::{InputRecord, Ledger};
 use simple_logger::SimpleLogger;
 use std::path::PathBuf;
 use std::{env, error::Error, ffi::OsString, fs::File};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Setup logger
     SimpleLogger::new().env().init()?;
 
     log::debug!("Application started");
 
-    // Process transactions
     log::debug!("Transactions processing: Starting");
     let ledger = process_transactions()?;
     log::debug!("Transactions processing: Done");
 
-    // Write in std::out
     log::debug!("Exporting account snapshots to stdout: Started");
     write_to_std_out(&ledger)?;
     log::debug!("Exporting account snapshots to stdout: Done");
@@ -27,8 +24,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// Returns the first positional argument sent to this process. If there are no
-// positional arguments, then this returns an error.
 fn get_first_arg() -> Result<OsString, Box<dyn Error>> {
     match env::args_os().nth(1) {
         None => Err(From::from("expected 1 argument, but got none")),
@@ -37,7 +32,6 @@ fn get_first_arg() -> Result<OsString, Box<dyn Error>> {
 }
 
 fn process_transactions() -> Result<Ledger, Box<dyn Error>> {
-    // Get filename as 1st argument
     let file_path = get_first_arg()?;
     let path = PathBuf::from(file_path);
     log::debug!("Extracted filepath fom args: {path:?}");
@@ -46,16 +40,12 @@ fn process_transactions() -> Result<Ledger, Box<dyn Error>> {
 }
 
 fn process_transactions_from_filepath(filepath: &PathBuf) -> Result<Ledger, Box<dyn Error>> {
-    // Open file
     let file: File = File::open(filepath)?;
 
-    // Create a CSV parser that reads from the file
     let mut rdr = csv::ReaderBuilder::new().trim(Trim::All).from_reader(file);
 
-    // Create ledger
     let mut ledger = Ledger::new();
 
-    // Looping over the record
     log::debug!("Started deserialising records");
     for result in rdr.deserialize::<InputRecord>() {
         log::debug!("Deserialising record into InputRecord: {result:?}");
