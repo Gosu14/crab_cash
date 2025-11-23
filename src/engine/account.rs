@@ -1,5 +1,4 @@
 use crate::engine::amount::{Amount, AmountError};
-use anyhow::{Ok, Result};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -63,7 +62,7 @@ impl Account {
         }
     }
 
-    pub fn deposit(&mut self, tx_id: u32, tx_amount: Amount) -> Result<()> {
+    pub fn deposit(&mut self, tx_id: u32, tx_amount: Amount) -> Result<(), AccountOperationError> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
@@ -86,7 +85,7 @@ impl Account {
         Ok(())
     }
 
-    pub fn withdraw(&mut self, tx_id: u32, tx_amount: Amount) -> Result<()> {
+    pub fn withdraw(&mut self, tx_id: u32, tx_amount: Amount) -> Result<(), AccountOperationError> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
@@ -112,7 +111,7 @@ impl Account {
         Ok(())
     }
 
-    pub fn dispute(&mut self, tx_id: u32) -> Result<()> {
+    pub fn dispute(&mut self, tx_id: u32) -> Result<(), AccountOperationError> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
@@ -143,7 +142,7 @@ impl Account {
         Ok(())
     }
 
-    pub fn resolve(&mut self, tx_id: u32) -> Result<()> {
+    pub fn resolve(&mut self, tx_id: u32) -> Result<(), AccountOperationError> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
@@ -173,7 +172,7 @@ impl Account {
         Ok(())
     }
 
-    pub fn chargeback(&mut self, tx_id: u32) -> Result<()> {
+    pub fn chargeback(&mut self, tx_id: u32) -> Result<(), AccountOperationError> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
@@ -224,9 +223,8 @@ mod tests {
         let err = account.withdraw(2, Amount::from_str("50.0").unwrap());
         assert!(err.is_err());
         let err = err.unwrap_err();
-        let op_err = err.downcast::<AccountOperationError>().unwrap();
         assert!(matches!(
-            op_err,
+            err,
             AccountOperationError::WithdrawalLimitExceeded(_)
         ));
 
@@ -292,8 +290,7 @@ mod tests {
         let err = account.deposit(1, Amount::from_str("200.0").unwrap());
         assert!(err.is_err());
         let err = err.unwrap_err();
-        let op_err = err.downcast::<AccountOperationError>().unwrap();
-        assert!(matches!(op_err, AccountOperationError::AccountLocked(_)));
+        assert!(matches!(err, AccountOperationError::AccountLocked(_)));
 
         // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
         assert_eq!(account.amount_available, Amount::new());
@@ -315,9 +312,8 @@ mod tests {
         let err = account.dispute(1);
         assert!(err.is_err());
         let err = err.unwrap_err();
-        let op_err = err.downcast::<AccountOperationError>().unwrap();
         assert!(matches!(
-            op_err,
+            err,
             AccountOperationError::InvalidWithdrawalDispute(_)
         ));
 

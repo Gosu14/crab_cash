@@ -2,7 +2,6 @@ use crate::engine::account::{Account, AccountOperationError};
 use crate::engine::account_snapshot::AccountSnapshot;
 use crate::engine::amount::{Amount, AmountError};
 use crate::engine::{Transaction, TransactionType};
-use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use thiserror::Error;
@@ -35,7 +34,7 @@ impl Ledger {
         }
     }
 
-    pub fn process_transaction(&mut self, tx: Transaction) -> Result<()> {
+    pub fn process_transaction(&mut self, tx: Transaction) -> Result<(), LedgerError> {
         let account = self
             .accounts
             .entry(tx.account_id)
