@@ -19,6 +19,9 @@ pub enum LedgerError {
 
     #[error("Amount parsing failed (tx id {0})")]
     Amount(#[from] AmountError),
+
+    #[error("Negative Tx amount is not allowed (tx id {0})")]
+    NegativeTxAmount(u32),
 }
 
 pub struct Ledger {
@@ -48,6 +51,10 @@ impl Ledger {
 
                 let amount_str = tx.amount.ok_or(LedgerError::MissingAmount(tx.id))?;
                 let amount = Amount::from_str(&amount_str)?;
+                // Negative transaction amount are forbidden and will return error
+                if amount < Amount::new() {
+                    Err(LedgerError::NegativeTxAmount(tx.id))?;
+                }
                 account.deposit(tx.id, amount)?;
                 self.tx_processed.insert(tx.id);
             }
@@ -57,6 +64,10 @@ impl Ledger {
                 }
                 let amount_str = tx.amount.ok_or(LedgerError::MissingAmount(tx.id))?;
                 let amount = Amount::from_str(&amount_str)?;
+                // Negative transaction amount are forbidden and will return error
+                if amount < Amount::new() {
+                    Err(LedgerError::NegativeTxAmount(tx.id))?;
+                }
                 account.withdraw(tx.id, amount)?;
                 self.tx_processed.insert(tx.id);
             }
@@ -149,5 +160,33 @@ mod tests {
         // This should overflow available + held and thus be filtered out
         let snapshots: Vec<_> = ledger.account_snapshots().collect();
         assert!(snapshots.is_empty());
+    }
+
+    #[test]
+    fn test_that_negative_deposit_amount_is_rejected() {
+        let mut ledger = Ledger::new();
+
+        let tx = Transaction {
+            id: 1,
+            account_id: 1,
+            typ: TransactionType::Deposit,
+            amount: Some(String::from("-1.0")),
+        };
+        let err = ledger.process_transaction(tx).unwrap_err();
+        assert!(matches!(err, LedgerError::NegativeTxAmount(1)));
+    }
+
+    #[test]
+    fn test_that_negative_withdrawal_amount_is_rejected() {
+        let mut ledger = Ledger::new();
+
+        let tx = Transaction {
+            id: 1,
+            account_id: 1,
+            typ: TransactionType::Withdrawal,
+            amount: Some(String::from("-1.0")),
+        };
+        let err = ledger.process_transaction(tx).unwrap_err();
+        assert!(matches!(err, LedgerError::NegativeTxAmount(1)));
     }
 }
