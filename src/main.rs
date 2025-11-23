@@ -78,9 +78,6 @@ fn process_transactions_from_filepath(filepath: &PathBuf) -> Result<Ledger, Box<
 pub fn write_to_std_out(ledger: &Ledger) -> Result<(), Box<dyn Error>> {
     let mut wtr = csv::Writer::from_writer(std::io::stdout());
 
-    // Write header manually
-    wtr.write_record(["client", "available", "held", "total", "locked"])?;
-
     log::debug!("Starting account snapshot serialisation");
     for acc in ledger.account_snapshots() {
         log::debug!("Serialising account snapshot: {acc:?}");
@@ -101,7 +98,8 @@ mod tests {
     #[test]
     fn test_process_transactions_csv() {
         let ledger =
-            process_transactions_from_filepath(&PathBuf::from("transactions.csv")).unwrap();
+            process_transactions_from_filepath(&PathBuf::from("./tests/files/test_1/input.csv"))
+                .unwrap();
 
         // Verify client 1: deposit 1.0 + deposit 2.0 - withdrawal 1.5 = 1.5
         let account1 = ledger.get_account(1);
