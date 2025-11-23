@@ -2,13 +2,13 @@ use crate::engine::amount::{Amount, AmountError};
 use std::collections::HashMap;
 use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 enum AccountTxType {
     Deposit,
     Withdrawal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct AccountTx {
     amount: Amount,
     typ: AccountTxType,
