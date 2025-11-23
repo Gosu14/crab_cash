@@ -63,7 +63,7 @@ fn process_transactions_from_filepath(filepath: &PathBuf) -> Result<Ledger, Box<
         log::debug!("Converting InputRecord into Transaction: {record:?}");
         let transaction = record.to_transaction();
         log::debug!("Processing transaction in ledger: {transaction:?}");
-        if let Err(e) = ledger.process_transaction(transaction) {
+        if let Err(e) = ledger.process_transaction(&transaction) {
             log::warn!(
                 "Error processing transaction id={} client={}: {}",
                 record.tx,

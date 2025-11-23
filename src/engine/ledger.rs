@@ -29,6 +29,12 @@ pub struct Ledger {
     accounts: HashMap<u16, Account>,
 }
 
+impl Default for Ledger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ledger {
     pub fn new() -> Self {
         Ledger {
@@ -37,7 +43,7 @@ impl Ledger {
         }
     }
 
-    pub fn process_transaction(&mut self, tx: Transaction) -> Result<(), LedgerError> {
+    pub fn process_transaction(&mut self, tx: &Transaction) -> Result<(), LedgerError> {
         let account = self
             .accounts
             .entry(tx.account_id)
@@ -49,8 +55,11 @@ impl Ledger {
                     Err(LedgerError::DuplicateTxId(tx.id))?
                 }
 
-                let amount_str = tx.amount.ok_or(LedgerError::MissingAmount(tx.id))?;
-                let amount = Amount::from_str(&amount_str)?;
+                let amount_str = tx
+                    .amount
+                    .as_ref()
+                    .ok_or(LedgerError::MissingAmount(tx.id))?;
+                let amount = Amount::from_str(amount_str)?;
                 // Negative transaction amount are forbidden and will return error
                 if amount < Amount::new() {
                     Err(LedgerError::NegativeTxAmount(tx.id))?;
@@ -62,8 +71,11 @@ impl Ledger {
                 if self.tx_processed.contains(&tx.id) {
                     Err(LedgerError::DuplicateTxId(tx.id))?
                 }
-                let amount_str = tx.amount.ok_or(LedgerError::MissingAmount(tx.id))?;
-                let amount = Amount::from_str(&amount_str)?;
+                let amount_str = tx
+                    .amount
+                    .as_ref()
+                    .ok_or(LedgerError::MissingAmount(tx.id))?;
+                let amount = Amount::from_str(amount_str)?;
                 // Negative transaction amount are forbidden and will return error
                 if amount < Amount::new() {
                     Err(LedgerError::NegativeTxAmount(tx.id))?;
@@ -120,7 +132,7 @@ mod tests {
             typ: TransactionType::Deposit,
             amount: Some(String::from("10.0")),
         };
-        assert!(ledger.process_transaction(tx1).is_ok());
+        assert!(ledger.process_transaction(&tx1).is_ok());
 
         // Second deposit with same tx id 1, even on different client
         let tx2 = Transaction {
@@ -129,7 +141,7 @@ mod tests {
             typ: TransactionType::Deposit,
             amount: Some(String::from("5.0")),
         };
-        let err = ledger.process_transaction(tx2).unwrap_err();
+        let err = ledger.process_transaction(&tx2).unwrap_err();
         assert!(matches!(err, LedgerError::DuplicateTxId(1)));
     }
 
@@ -143,7 +155,7 @@ mod tests {
             typ: TransactionType::Deposit,
             amount: Some(String::from("not_parsable")),
         };
-        let err = ledger.process_transaction(tx).unwrap_err();
+        let err = ledger.process_transaction(&tx).unwrap_err();
         assert!(matches!(err, LedgerError::Amount(_)));
     }
 
@@ -172,7 +184,7 @@ mod tests {
             typ: TransactionType::Deposit,
             amount: Some(String::from("-1.0")),
         };
-        let err = ledger.process_transaction(tx).unwrap_err();
+        let err = ledger.process_transaction(&tx).unwrap_err();
         assert!(matches!(err, LedgerError::NegativeTxAmount(1)));
     }
 
@@ -186,7 +198,7 @@ mod tests {
             typ: TransactionType::Withdrawal,
             amount: Some(String::from("-1.0")),
         };
-        let err = ledger.process_transaction(tx).unwrap_err();
+        let err = ledger.process_transaction(&tx).unwrap_err();
         assert!(matches!(err, LedgerError::NegativeTxAmount(1)));
     }
 }
