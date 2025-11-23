@@ -6,7 +6,7 @@ use thiserror::Error;
 /// It is using internally an i64 in order to avoid floating point rounding error.
 /// The i64 (8 bytes) has a smaller memory footprint than BigNumber/Decimal crates.
 /// The Amount precision is four places past the decimal
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Amount {
     store: i64,
 }
@@ -21,6 +21,12 @@ pub enum AmountError {
 
     #[error("Underflow error while creating Amount")]
     Underflow,
+}
+
+impl Default for Amount {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Amount {
