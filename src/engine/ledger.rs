@@ -92,3 +92,62 @@ impl Ledger {
         self.accounts.get(&id).expect("Missing account")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{Transaction, TransactionType};
+
+    #[test]
+    fn test_that_duplicate_tx_id_is_rejected_by_ledger() {
+        let mut ledger = Ledger::new();
+
+        // First deposit with tx id 1 on client 1
+        let tx1 = Transaction {
+            id: 1,
+            account_id: 1,
+            typ: TransactionType::Deposit,
+            amount: Some(String::from("10.0")),
+        };
+        assert!(ledger.process_transaction(tx1).is_ok());
+
+        // Second deposit with same tx id 1, even on different client
+        let tx2 = Transaction {
+            id: 1,
+            account_id: 2,
+            typ: TransactionType::Deposit,
+            amount: Some(String::from("5.0")),
+        };
+        let err = ledger.process_transaction(tx2).unwrap_err();
+        assert!(matches!(err, LedgerError::DuplicateTxId(1)));
+    }
+
+    #[test]
+    fn test_that_invalid_amount_string_is_rejected() {
+        let mut ledger = Ledger::new();
+
+        let tx = Transaction {
+            id: 1,
+            account_id: 1,
+            typ: TransactionType::Deposit,
+            amount: Some(String::from("not_parsable")),
+        };
+        let err = ledger.process_transaction(tx).unwrap_err();
+        assert!(matches!(err, LedgerError::Amount(_)));
+    }
+
+    #[test]
+    fn test_that_overflow_in_total_removes_account_from_snapshots() {
+        let mut ledger = Ledger::new();
+
+        let acc = ledger.accounts.entry(1).or_insert_with(|| Account::new(1));
+
+        // Force near-overflow values manually
+        acc.amount_available = Amount::from_str("922337203685477.5807").unwrap();
+        acc.amount_held = Amount::from_str("1.0").unwrap();
+
+        // This should overflow available + held and thus be filtered out
+        let snapshots: Vec<_> = ledger.account_snapshots().collect();
+        assert!(snapshots.is_empty());
+    }
+}
