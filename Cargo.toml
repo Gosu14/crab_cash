@@ -6,5 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 csv = "1.4.0"
+log = "0.4.28"
 serde = { version = "1.0.228", features = ["derive"] }
+simple_logger = { version = "5.1.0", features = ["stderr"] }
 thiserror = "2.0.17"

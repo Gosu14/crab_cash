@@ -2,18 +2,26 @@ mod engine;
 
 use csv::Trim;
 use engine::{Amount, InputRecord, Ledger};
+use simple_logger::SimpleLogger;
 use std::{env, error::Error, ffi::OsString, fs::File};
 
 fn main() {
+    // Setup logger
+    SimpleLogger::new().env().init().unwrap();
+
+    log::debug!("Application started - Extracting filepath from args");
+
     // Get filename as 1st argument
     let filepath = get_first_arg().expect("Unable to get first arg");
 
     // Open file
     let file = File::open(filepath).expect("Unable to open the File");
 
+    log::debug!("Transactions processing Starting");
     // Process transactions
     let ledger = process_transactions(file);
 
+    log::debug!("Exporting account snapshots to stdout");
     // Write in std::out
     let mut wtr = csv::Writer::from_writer(std::io::stdout());
 
@@ -26,6 +34,8 @@ fn main() {
     }
 
     wtr.flush().expect("Flushing Meadows");
+
+    log::debug!("Application finished - All transactions processed");
 }
 
 // Returns the first positional argument sent to this process. If there are no
@@ -48,7 +58,14 @@ fn process_transactions(file: File) -> Ledger {
     for result in rdr.deserialize::<InputRecord>() {
         let record = result.expect("a CSV record");
         let transaction = record.to_transaction();
-        let _ = ledger.process_transaction(transaction);
+        if let Err(e) = ledger.process_transaction(transaction) {
+            log::warn!(
+                "Error processing transaction id={} client={}: {}",
+                record.tx,
+                record.client,
+                e
+            );
+        }
     }
     ledger
 }

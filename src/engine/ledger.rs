@@ -69,6 +69,7 @@ impl Ledger {
         Ok(())
     }
 
+    // WARNING: Overflow error when computing total - will be swallowed and logged
     pub fn account_snapshots(&self) -> impl Iterator<Item = AccountSnapshot> {
         self.accounts.values().filter_map(|acc| {
             match acc.amount_available.add(&acc.amount_held) {
@@ -79,8 +80,9 @@ impl Ledger {
                     total: total.to_string(),
                     locked: acc.is_locked,
                 }),
-                Err(e) => {
+                Err(_) => {
                     // Total is overflowing => silently ignore but log
+                    log::warn!("Ledger::account_snapshots error: Overflow when computing Total. This is ignored silently.");
                     None
                 }
             }
