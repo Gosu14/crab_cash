@@ -1,7 +1,8 @@
 use crate::engine::account::{Account, AccountOperationError};
+use crate::engine::account_snapshot::AccountSnapshot;
 use crate::engine::amount::{Amount, AmountError};
 use crate::engine::{Transaction, TransactionType};
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use thiserror::Error;
@@ -68,8 +69,22 @@ impl Ledger {
         Ok(())
     }
 
-    pub fn accounts(&self) -> impl Iterator<Item = &Account> {
-        self.accounts.values()
+    pub fn account_snapshots(&self) -> impl Iterator<Item = AccountSnapshot> {
+        self.accounts.values().filter_map(|acc| {
+            match acc.amount_available.add(&acc.amount_held) {
+                Ok(total) => Some(AccountSnapshot {
+                    client: acc.id.to_string(),
+                    available: acc.amount_available.to_string(),
+                    held: acc.amount_held.to_string(),
+                    total: total.to_string(),
+                    locked: acc.is_locked,
+                }),
+                Err(e) => {
+                    // Total is overflowing => silently ignore but log
+                    None
+                }
+            }
+        })
     }
 
     pub fn get_account(&self, id: u16) -> &Account {

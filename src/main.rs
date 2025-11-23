@@ -21,15 +21,8 @@ fn main() {
     wtr.write_record(["client", "available", "held", "total", "locked"])
         .expect("Error writing headers");
 
-    for acc in ledger.accounts() {
-        wtr.write_record([
-            acc.id.to_string(),
-            acc.amount_available.to_string(),
-            acc.amount_held.to_string(),
-            (acc.amount_available.add(&acc.amount_held).unwrap()).to_string(),
-            acc.is_locked.to_string(),
-        ])
-        .expect("Error writing record");
+    for acc in ledger.account_snapshots() {
+        wtr.serialize(acc).expect("Error writing record");
     }
 
     wtr.flush().expect("Flushing Meadows");
