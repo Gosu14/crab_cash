@@ -12,6 +12,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crab_cash"
+version = "0.2.0"
+dependencies = [
+ "csv",
+ "log",
+ "serde",
+ "simple_logger",
+ "thiserror",
+]
+
+[[package]]
 name = "csv"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -30,17 +41,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "csv_manipulation"
-version = "0.1.0"
-dependencies = [
- "csv",
- "log",
- "serde",
- "simple_logger",
- "thiserror",
 ]
 
 [[package]]
