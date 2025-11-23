@@ -1,3 +1,4 @@
+use crate::engine::amount::{Amount, AmountError};
 use anyhow::{Ok, Result};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -10,7 +11,7 @@ enum AccountTxType {
 
 #[derive(Debug, Clone)]
 struct AccountTx {
-    amount: f64,
+    amount: Amount,
     typ: AccountTxType,
     is_disputed: bool,
 }
@@ -18,8 +19,8 @@ struct AccountTx {
 #[derive(Debug)]
 pub struct Account {
     pub id: u16, // Unique
-    pub amount_available: f64,
-    pub amount_held: f64,
+    pub amount_available: Amount,
+    pub amount_held: Amount,
     pub is_locked: bool,
     tx: HashMap<u32, AccountTx>,
 }
@@ -46,26 +47,30 @@ pub enum AccountOperationError {
 
     #[error("Withdrawal transaction cannot be disputed / resolved / charged back (tx id {0})")]
     InvalidWithdrawalDispute(u32),
+
+    #[error("Invalid Amount operation (tx id {0})")]
+    InvalidAmountOperation(#[from] AmountError),
 }
 
 impl Account {
     pub fn new(client_id: u16) -> Self {
         Account {
             id: client_id,
-            amount_available: 0.0,
-            amount_held: 0.0,
+            amount_available: Amount::new(),
+            amount_held: Amount::new(),
             is_locked: false,
             tx: HashMap::new(),
         }
     }
 
-    pub fn deposit(&mut self, tx_id: u32, tx_amount: f64) -> Result<()> {
+    pub fn deposit(&mut self, tx_id: u32, tx_amount: Amount) -> Result<()> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
 
         if !self.tx.contains_key(&tx_id) {
-            self.amount_available += tx_amount;
+            self.amount_available = self.amount_available.add(&tx_amount)?;
+
             self.tx.insert(
                 tx_id,
                 AccountTx {
@@ -81,13 +86,14 @@ impl Account {
         Ok(())
     }
 
-    pub fn withdraw(&mut self, tx_id: u32, tx_amount: f64) -> Result<()> {
+    pub fn withdraw(&mut self, tx_id: u32, tx_amount: Amount) -> Result<()> {
         if self.is_locked {
             Err(AccountOperationError::AccountLocked(tx_id))?
         }
         if !self.tx.contains_key(&tx_id) {
             if self.amount_available >= tx_amount {
-                self.amount_available -= tx_amount;
+                self.amount_available = self.amount_available.sub(&tx_amount)?;
+
                 self.tx.insert(
                     tx_id,
                     AccountTx {
@@ -117,9 +123,13 @@ impl Account {
 
             match tx.typ {
                 AccountTxType::Deposit => {
+                    let new_available = self.amount_available.sub(&tx.amount)?;
+
+                    let new_held = self.amount_held.add(&tx.amount)?;
+
                     // Hold the funds and keep the same total
-                    self.amount_available -= tx.amount;
-                    self.amount_held += tx.amount;
+                    self.amount_available = new_available;
+                    self.amount_held = new_held;
                 }
                 AccountTxType::Withdrawal => {
                     Err(AccountOperationError::InvalidWithdrawalDispute(tx_id))? // Withdrawal can't be disputed
@@ -144,9 +154,13 @@ impl Account {
 
             match tx.typ {
                 AccountTxType::Deposit => {
+                    let new_held = self.amount_held.sub(&tx.amount)?;
+
+                    let new_available = self.amount_available.add(&tx.amount)?;
+
                     // Release held funds back to available
-                    self.amount_held -= tx.amount;
-                    self.amount_available += tx.amount;
+                    self.amount_held = new_held;
+                    self.amount_available = new_available;
                 }
                 AccountTxType::Withdrawal => {
                     Err(AccountOperationError::InvalidWithdrawalDispute(tx_id))?
@@ -171,7 +185,7 @@ impl Account {
             match tx.typ {
                 AccountTxType::Deposit => {
                     // Remove held funds
-                    self.amount_held -= tx.amount;
+                    self.amount_held = self.amount_held.sub(&tx.amount)?;
                 }
                 AccountTxType::Withdrawal => {
                     Err(AccountOperationError::InvalidWithdrawalDispute(tx_id))?
@@ -188,25 +202,26 @@ impl Account {
 }
 
 mod tests {
-    use crate::engine::{Account, account::AccountOperationError};
+    use crate::engine::{Account, Amount, account::AccountOperationError};
+    use std::str::FromStr;
 
     #[test]
     fn test_that_a_bigger_amount_than_what_is_available_cannot_be_withdrawn() {
         let mut account = Account::new(0);
 
         // Make Deposit
-        let _ = account.deposit(0, 100.0);
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
 
         // Withdraw all
-        let _ = account.withdraw(1, 100.0);
+        let _ = account.withdraw(1, Amount::from_str("100.0").unwrap());
 
         // Verify client 1: deposit 100.0 + withdrawal 100.0 = 0.0
-        assert_eq!(account.amount_available, 0.0);
-        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
         assert!(!account.is_locked);
 
         // Try to withdraw more and check that is ignored
-        let err = account.withdraw(2, 50.0);
+        let err = account.withdraw(2, Amount::from_str("50.0").unwrap());
         assert!(err.is_err());
         let err = err.unwrap_err();
         let op_err = err.downcast::<AccountOperationError>().unwrap();
@@ -215,8 +230,8 @@ mod tests {
             AccountOperationError::WithdrawalLimitExceeded(_)
         ));
 
-        assert_eq!(account.amount_available, 0.0);
-        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
         assert!(!account.is_locked);
     }
 
@@ -225,7 +240,7 @@ mod tests {
         let mut account = Account::new(0);
 
         // Make a deposit
-        let _ = account.deposit(0, 100.0);
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
 
         // Dispute the deposit
         let _ = account.dispute(0);
@@ -233,23 +248,23 @@ mod tests {
         // Verify that the deposit is under dispute
         let deposit = account.tx.get(&0).unwrap();
         assert!(deposit.is_disputed);
-        assert_eq!(account.amount_held, 100.0);
-        assert_eq!(account.amount_available, 0.0);
+        assert_eq!(account.amount_held, Amount::from_str("100.0").unwrap());
+        assert_eq!(account.amount_available, Amount::new());
 
         // Then resolve
         let _ = account.resolve(0);
 
         // Verify that now the account is not locked and amount back to 100.0
         assert!(!account.is_locked);
-        assert_eq!(account.amount_held, 0.0);
-        assert_eq!(account.amount_available, 100.0);
+        assert_eq!(account.amount_held, Amount::new());
+        assert_eq!(account.amount_available, Amount::from_str("100.0").unwrap());
 
         // Try adding another deposit
-        let _ = account.deposit(1, 200.0);
+        let _ = account.deposit(1, Amount::from_str("200.0").unwrap());
 
         // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
-        assert_eq!(account.amount_available, 300.0);
-        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, Amount::from_str("300.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
         assert!(!account.is_locked);
     }
 
@@ -258,7 +273,7 @@ mod tests {
         let mut account = Account::new(0);
 
         // First make a deposit
-        let _ = account.deposit(0, 100.0);
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
 
         // Then dispute the deposit
         let _ = account.dispute(0);
@@ -274,15 +289,15 @@ mod tests {
         assert!(account.is_locked);
 
         // Try adding another deposit
-        let err = account.deposit(1, 200.0);
+        let err = account.deposit(1, Amount::from_str("200.0").unwrap());
         assert!(err.is_err());
         let err = err.unwrap_err();
         let op_err = err.downcast::<AccountOperationError>().unwrap();
         assert!(matches!(op_err, AccountOperationError::AccountLocked(_)));
 
         // Verify client 1: deposit 100.0 + dispute + chargeback + deposit 200.0 = 0.0
-        assert_eq!(account.amount_available, 0.0);
-        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, Amount::new());
+        assert_eq!(account.amount_held, Amount::new());
         assert!(account.is_locked);
     }
 
@@ -291,10 +306,10 @@ mod tests {
         let mut account = Account::new(0);
 
         // Make a deposit
-        let _ = account.deposit(0, 100.0);
+        let _ = account.deposit(0, Amount::from_str("100.0").unwrap());
 
         // Withdraw
-        let _ = account.withdraw(1, 50.0);
+        let _ = account.withdraw(1, Amount::from_str("50.0").unwrap());
 
         // Try dispute the withdrawal
         let err = account.dispute(1);
@@ -309,12 +324,12 @@ mod tests {
         // Verify that the deposit is under dispute
         let withdrawal = account.tx.get(&1).unwrap();
         assert!(!withdrawal.is_disputed);
-        assert_eq!(account.amount_held, 0.0);
-        assert_eq!(account.amount_available, 50.0);
+        assert_eq!(account.amount_held, Amount::new());
+        assert_eq!(account.amount_available, Amount::from_str("50.0").unwrap());
 
         // Verify client 1: deposit 100.0 + withdrawal 50.0 + try dispute the withdrawal = 50.0
-        assert_eq!(account.amount_available, 50.0);
-        assert_eq!(account.amount_held, 0.0);
+        assert_eq!(account.amount_available, Amount::from_str("50.0").unwrap());
+        assert_eq!(account.amount_held, Amount::new());
         assert!(!account.is_locked);
     }
 }

@@ -1,17 +1,24 @@
-use crate::Account;
-use crate::engine::account::AccountOperationError;
-use crate::{Transaction, TransactionType};
+use crate::engine::account::{Account, AccountOperationError};
+use crate::engine::amount::{Amount, AmountError};
+use crate::engine::{Transaction, TransactionType};
 use anyhow::{Ok, Result};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LedgerError {
-    #[error("Account operation failed: {0}")]
+    #[error("Account operation failed (tx id {0})")]
     Account(#[from] AccountOperationError),
 
     #[error("Duplicate transaction id (tx id {0})")]
     DuplicateTxId(u32),
+
+    #[error("Missing Amount id (tx id {0})")]
+    MissingAmount(u32),
+
+    #[error("Amount parsing failed (tx id {0})")]
+    Amount(#[from] AmountError),
 }
 
 pub struct Ledger {
@@ -38,15 +45,20 @@ impl Ledger {
                 if self.tx_processed.contains(&tx.id) {
                     Err(LedgerError::DuplicateTxId(tx.id))?
                 }
+
+                let amount_str = tx.amount.ok_or(LedgerError::MissingAmount(tx.id))?;
+                let amount = Amount::from_str(&amount_str)?;
+                account.deposit(tx.id, amount)?;
                 self.tx_processed.insert(tx.id);
-                account.deposit(tx.id, tx.amount)?
             }
             TransactionType::Withdrawal => {
                 if self.tx_processed.contains(&tx.id) {
                     Err(LedgerError::DuplicateTxId(tx.id))?
                 }
+                let amount_str = tx.amount.ok_or(LedgerError::MissingAmount(tx.id))?;
+                let amount = Amount::from_str(&amount_str)?;
+                account.withdraw(tx.id, amount)?;
                 self.tx_processed.insert(tx.id);
-                account.withdraw(tx.id, tx.amount)?
             }
             TransactionType::Dispute => account.dispute(tx.id)?,
             TransactionType::Resolve => account.resolve(tx.id)?,

@@ -8,7 +8,7 @@ pub struct InputRecord {
     pub typ: RecordType,
     pub client: u16,
     pub tx: u32,
-    pub amount: Option<f64>,
+    pub amount: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -27,35 +27,35 @@ impl InputRecord {
             RecordType::Deposit => Transaction {
                 account_id: self.client,
                 id: self.tx,
-                amount: self.amount.unwrap(),
+                amount: self.amount.clone(),
                 typ: TransactionType::Deposit,
                 is_disputed: false,
             },
             RecordType::Withdrawal => Transaction {
                 account_id: self.client,
                 id: self.tx,
-                amount: self.amount.unwrap(),
+                amount: self.amount.clone(),
                 typ: TransactionType::Withdrawal,
                 is_disputed: false,
             },
             RecordType::Dispute => Transaction {
                 account_id: self.client,
                 id: self.tx,
-                amount: 0.0,
+                amount: None,
                 typ: TransactionType::Dispute,
                 is_disputed: false,
             },
             RecordType::Resolve => Transaction {
                 account_id: self.client,
                 id: self.tx,
-                amount: 0.0,
+                amount: None,
                 typ: TransactionType::Resolve,
                 is_disputed: false,
             },
             RecordType::Chargeback => Transaction {
                 account_id: self.client,
                 id: self.tx,
-                amount: 0.0,
+                amount: None,
                 typ: TransactionType::Chargeback,
                 is_disputed: false,
             },

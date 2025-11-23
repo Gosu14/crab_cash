@@ -1,7 +1,7 @@
 mod engine;
 
 use csv::Trim;
-use engine::{Account, InputRecord, Ledger, Transaction, TransactionType};
+use engine::{Amount, InputRecord, Ledger};
 use std::{env, error::Error, ffi::OsString, fs::File};
 
 fn main() {
@@ -26,7 +26,7 @@ fn main() {
             acc.id.to_string(),
             acc.amount_available.to_string(),
             acc.amount_held.to_string(),
-            (acc.amount_available + acc.amount_held).to_string(),
+            (acc.amount_available.add(&acc.amount_held).unwrap()).to_string(),
             acc.is_locked.to_string(),
         ])
         .expect("Error writing record");
@@ -63,7 +63,7 @@ fn process_transactions(file: File) -> Ledger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use std::{path::Path, str::FromStr};
 
     #[test]
     fn test_process_transactions_csv() {
@@ -73,14 +73,14 @@ mod tests {
 
         // Verify client 1: deposit 1.0 + deposit 2.0 - withdrawal 1.5 = 1.5
         let account1 = ledger.get_account(1);
-        assert_eq!(account1.amount_available, 1.5);
-        assert_eq!(account1.amount_held, 0.0);
+        assert_eq!(account1.amount_available, Amount::from_str("1.5").unwrap());
+        assert_eq!(account1.amount_held, Amount::new());
         assert!(!account1.is_locked);
 
         // Verify client 2: deposit 2.0 - withdrawal 3.0 (should fail) = 2.0
         let account2 = ledger.get_account(2);
-        assert_eq!(account2.amount_available, 2.0);
-        assert_eq!(account2.amount_held, 0.0);
+        assert_eq!(account2.amount_available, Amount::from_str("2.0").unwrap());
+        assert_eq!(account2.amount_held, Amount::new());
         assert!(!account2.is_locked);
     }
 }
