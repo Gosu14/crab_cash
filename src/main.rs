@@ -89,28 +89,3 @@ pub fn write_to_std_out(ledger: &Ledger) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::str::FromStr;
-
-    #[test]
-    fn test_process_transactions_csv() {
-        let ledger =
-            process_transactions_from_filepath(&PathBuf::from("./tests/files/test_1/input.csv"))
-                .unwrap();
-
-        // Verify client 1: deposit 1.0 + deposit 2.0 - withdrawal 1.5 = 1.5
-        let account1 = ledger.get_account(1);
-        assert_eq!(account1.amount_available, Amount::from_str("1.5").unwrap());
-        assert_eq!(account1.amount_held, Amount::new());
-        assert!(!account1.is_locked);
-
-        // Verify client 2: deposit 2.0 - withdrawal 3.0 (should fail) = 2.0
-        let account2 = ledger.get_account(2);
-        assert_eq!(account2.amount_available, Amount::from_str("2.0").unwrap());
-        assert_eq!(account2.amount_held, Amount::new());
-        assert!(!account2.is_locked);
-    }
-}

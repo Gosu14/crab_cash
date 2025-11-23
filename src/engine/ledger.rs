@@ -110,10 +110,6 @@ impl Ledger {
             }
         })
     }
-
-    pub fn get_account(&self, id: u16) -> &Account {
-        self.accounts.get(&id).expect("Missing account")
-    }
 }
 
 #[cfg(test)]
