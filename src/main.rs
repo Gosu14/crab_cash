@@ -49,7 +49,13 @@ fn process_transactions_from_filepath(filepath: &PathBuf) -> Result<Ledger, Box<
     log::debug!("Started deserialising records");
     for result in rdr.deserialize::<InputRecord>() {
         log::debug!("Deserialising record into InputRecord: {result:?}");
-        let record = result?;
+        let record = match result {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("Error deserializing record:{e}");
+                continue;
+            }
+        };
         log::debug!("Converting InputRecord into Transaction: {record:?}");
         let transaction = record.to_transaction();
         log::debug!("Processing transaction in ledger: {transaction:?}");
